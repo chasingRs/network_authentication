@@ -129,10 +129,10 @@ class NetworkAuthenticator:
     def _get(self, path: str, params: dict[str, Any], *, host: str | None = None) -> str:
         query = urlencode({key: value for key, value in params.items() if value is not None})
         url = self._build_url(path)
-        if host:
-            url = self._override_request_host(url, host)
         if query:
             url = f"{url}?{query}"
+        if host:
+            url = self._override_request_host(url, host)
 
         headers = {"User-Agent": self.user_agent}
         if host:
