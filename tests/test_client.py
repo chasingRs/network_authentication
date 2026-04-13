@@ -1,5 +1,4 @@
 import unittest
-from urllib.parse import urlsplit
 
 from network_authentication.client import LoginConfig, NetworkAuthenticator
 
@@ -73,7 +72,5 @@ class NetworkAuthenticatorTests(unittest.TestCase):
         second_request, _ = opener.requests[1]
         self.assertTrue(first_request.full_url.startswith("http://portal.example.com/cgi-bin/get_challenge"))
         self.assertTrue(second_request.full_url.startswith("http://portal.example.com/cgi-bin/srun_portal"))
-        self.assertEqual(urlsplit(first_request.full_url).netloc, "portal.example.com")
-        self.assertEqual(urlsplit(second_request.full_url).netloc, "portal.example.com")
         self.assertIsNone(first_request.get_header("Host"))
         self.assertIsNone(second_request.get_header("Host"))
