@@ -46,10 +46,16 @@ python -m network_authentication ^
 
 - `--domain`：用户名后缀，例如 `@example.edu.cn`
 - `--ip`：手动指定登录 IP；不传则使用 challenge 接口返回的 `online_ip`
-- `--host`：使用指定主机（通常是网关 IP）发起请求，并自动保留门户域名 Host 头，适用于未认证前 DNS 无法解析场景
+- `--host`：用于兼容部分门户的参数差异（影响登录参数中的 `ip`/`double_stack` 处理）
 - `--json`：打印完整响应 JSON
 - `--otp`：使用 OTP 模式提交密码
 - `--double-stack`：启用双栈参数
+
+如果未认证前 DNS 无法解析，优先直接把门户 IP 写到 `--base-url`，例如：
+
+```bash
+python -m network_authentication --base-url http://10.0.0.1
+```
 
 ## 开发验证
 

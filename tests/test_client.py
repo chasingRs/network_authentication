@@ -35,7 +35,7 @@ class _RecordingOpener:
 
 
 class NetworkAuthenticatorTests(unittest.TestCase):
-    def test_login_with_host_override(self):
+    def test_login_with_host_param_still_uses_base_url(self):
         opener = _RecordingOpener(
             [
                 'callback({"challenge":"token","online_ip":"1.2.3.4"})',
@@ -50,10 +50,10 @@ class NetworkAuthenticatorTests(unittest.TestCase):
         self.assertEqual(response["suc_msg"], "login ok")
         first_request, _ = opener.requests[0]
         second_request, _ = opener.requests[1]
-        self.assertTrue(first_request.full_url.startswith("http://10.0.0.1/cgi-bin/get_challenge"))
-        self.assertTrue(second_request.full_url.startswith("http://10.0.0.1/cgi-bin/srun_portal"))
-        self.assertEqual(first_request.get_header("Host"), "portal.example.com")
-        self.assertEqual(second_request.get_header("Host"), "portal.example.com")
+        self.assertTrue(first_request.full_url.startswith("http://portal.example.com/cgi-bin/get_challenge"))
+        self.assertTrue(second_request.full_url.startswith("http://portal.example.com/cgi-bin/srun_portal"))
+        self.assertIsNone(first_request.get_header("Host"))
+        self.assertIsNone(second_request.get_header("Host"))
 
     def test_login_without_host_override_uses_base_url(self):
         opener = _RecordingOpener(
@@ -74,26 +74,6 @@ class NetworkAuthenticatorTests(unittest.TestCase):
         self.assertTrue(second_request.full_url.startswith("http://portal.example.com/cgi-bin/srun_portal"))
         self.assertIsNone(first_request.get_header("Host"))
         self.assertIsNone(second_request.get_header("Host"))
-
-    def test_login_with_host_override_preserves_base_url_port(self):
-        opener = _RecordingOpener(
-            [
-                'callback({"challenge":"token","online_ip":"1.2.3.4"})',
-                'callback({"suc_msg":"login ok"})',
-            ]
-        )
-        config = LoginConfig(username="alice", password="secret", base_url="http://portal.example.com:8080")
-        client = NetworkAuthenticator(config, opener=opener)
-
-        response = client.login(host="10.0.0.1")
-
-        self.assertEqual(response["suc_msg"], "login ok")
-        first_request, _ = opener.requests[0]
-        second_request, _ = opener.requests[1]
-        self.assertTrue(first_request.full_url.startswith("http://10.0.0.1:8080/cgi-bin/get_challenge"))
-        self.assertTrue(second_request.full_url.startswith("http://10.0.0.1:8080/cgi-bin/srun_portal"))
-        self.assertEqual(first_request.get_header("Host"), "portal.example.com:8080")
-        self.assertEqual(second_request.get_header("Host"), "portal.example.com:8080")
 
     def test_invalid_base_url_raises(self):
         config = LoginConfig(username="alice", password="secret", base_url="portal.example.com")
