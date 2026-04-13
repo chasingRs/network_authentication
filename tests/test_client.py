@@ -35,7 +35,7 @@ class _RecordingOpener:
 
 
 class NetworkAuthenticatorTests(unittest.TestCase):
-    def test_login_uses_host_override_for_http_requests(self):
+    def test_login_with_host_override(self):
         opener = _RecordingOpener(
             [
                 'callback({"challenge":"token","online_ip":"1.2.3.4"})',
