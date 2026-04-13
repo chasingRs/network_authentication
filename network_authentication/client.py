@@ -57,7 +57,7 @@ class NetworkAuthenticator:
         self.config = config
         self.opener = opener or build_opener()
         self.user_agent = "network-authentication/1.0.0"
-        self._portal_host_header_value = urlsplit(self._build_url("/")).netloc
+        self._portal_netloc = urlsplit(self._build_url("/")).netloc
 
     def get_challenge(self, *, host: str | None = None) -> dict[str, Any]:
         text = self._get(
@@ -137,7 +137,7 @@ class NetworkAuthenticator:
 
         headers = {"User-Agent": self.user_agent}
         if host:
-            headers["Host"] = self._portal_host_header()
+            headers["Host"] = self._portal_netloc
         request = Request(url, headers=headers, method="GET")
         with self.opener.open(request, timeout=self.config.timeout) as response:
             charset = response.headers.get_content_charset() or "utf-8"
@@ -147,9 +147,6 @@ class NetworkAuthenticator:
     def _override_url_host(url: str, host: str) -> str:
         parts = urlsplit(url)
         return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
-
-    def _portal_host_header(self) -> str:
-        return self._portal_host_header_value
 
     @staticmethod
     def _parse_api_response(payload: str) -> dict[str, Any]:
