@@ -46,7 +46,7 @@ python -m network_authentication ^
 
 - `--domain`：用户名后缀，例如 `@example.edu.cn`
 - `--ip`：手动指定登录 IP；不传则使用 challenge 接口返回的 `online_ip`
-- `--host`：用于兼容部分门户的参数差异（影响登录参数中的 `ip`/`double_stack` 处理）
+- `--host`：用于兼容部分门户的参数差异（仅影响登录参数中的 `ip`/`double_stack` 处理，不改变请求目标地址）
 - `--json`：打印完整响应 JSON
 - `--otp`：使用 OTP 模式提交密码
 - `--double-stack`：启用双栈参数
