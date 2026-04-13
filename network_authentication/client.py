@@ -57,7 +57,7 @@ class NetworkAuthenticator:
         self.config = config
         self.opener = opener or build_opener()
         self.user_agent = "network-authentication/1.0.0"
-        self._portal_netloc = urlsplit(self._build_url("/")).netloc
+        self._portal_netloc = urlsplit(self.config.base_url).netloc
 
     def get_challenge(self, *, host: str | None = None) -> dict[str, Any]:
         text = self._get(
