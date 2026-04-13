@@ -56,7 +56,9 @@ class NetworkAuthenticator:
             raise AuthenticationError("Missing portal base URL. Pass --base-url or set NETWORK_AUTH_BASE_URL.")
         parsed_base_url = urlsplit(config.base_url)
         if not parsed_base_url.scheme or not parsed_base_url.netloc:
-            raise AuthenticationError("Invalid portal base URL. Include scheme and hostname, for example: http://portal.example.com")
+            raise AuthenticationError(
+                f"Invalid portal base URL: {config.base_url!r}. Include scheme and hostname, for example: http://portal.example.com"
+            )
         self.config = config
         self.opener = opener or build_opener()
         self.user_agent = "network-authentication/1.0.0"
