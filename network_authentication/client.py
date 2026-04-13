@@ -57,7 +57,7 @@ class NetworkAuthenticator:
         parsed_base_url = urlsplit(config.base_url)
         if not parsed_base_url.scheme or not parsed_base_url.netloc:
             raise AuthenticationError(
-                f"Invalid portal base URL: {config.base_url!r}. Include scheme and hostname, for example: http://portal.example.com"
+                f"Invalid portal base URL: {config.base_url!r}. Include scheme and host, for example: http://portal.example.com"
             )
         self.config = config
         self.opener = opener or build_opener()
