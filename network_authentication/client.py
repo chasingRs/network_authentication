@@ -132,7 +132,7 @@ class NetworkAuthenticator:
         if query:
             url = f"{url}?{query}"
         if host:
-            url = self._override_request_host(url, host)
+            url = self._override_url_host(url, host)
 
         headers = {"User-Agent": self.user_agent}
         if host:
@@ -143,7 +143,7 @@ class NetworkAuthenticator:
             return response.read().decode(charset, errors="replace")
 
     @staticmethod
-    def _override_request_host(url: str, host: str) -> str:
+    def _override_url_host(url: str, host: str) -> str:
         parts = urlsplit(url)
         return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
 

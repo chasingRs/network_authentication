@@ -3,7 +3,7 @@ import unittest
 from network_authentication.client import LoginConfig, NetworkAuthenticator
 
 
-class _Headers:
+class _FakeHeaders:
     @staticmethod
     def get_content_charset() -> str:
         return "utf-8"
@@ -12,7 +12,7 @@ class _Headers:
 class _FakeResponse:
     def __init__(self, payload: str) -> None:
         self._payload = payload
-        self.headers = _Headers()
+        self.headers = _FakeHeaders()
 
     def read(self) -> bytes:
         return self._payload.encode("utf-8")
