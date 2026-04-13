@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import OpenerDirector, Request, build_opener
 
 from .crypto import build_checksum, encode_user_info, password_md5
@@ -58,7 +58,7 @@ class NetworkAuthenticator:
         self.opener = opener or build_opener()
         self.user_agent = "network-authentication/1.0.0"
 
-    def get_challenge(self) -> dict[str, Any]:
+    def get_challenge(self, *, host: str | None = None) -> dict[str, Any]:
         text = self._get(
             TOKEN_API,
             {
@@ -66,6 +66,7 @@ class NetworkAuthenticator:
                 "username": self.config.full_username,
                 "ip": self.config.user_ip,
             },
+            host=host,
         )
         return self._parse_api_response(text)
 
@@ -112,7 +113,7 @@ class NetworkAuthenticator:
         }
 
     def login(self, *, host: str | None = None) -> dict[str, Any]:
-        challenge_response = self.get_challenge()
+        challenge_response = self.get_challenge(host=host)
         challenge = challenge_response.get("challenge")
         if not challenge:
             raise AuthenticationError(f"Cannot get challenge: {challenge_response}")
@@ -120,21 +121,34 @@ class NetworkAuthenticator:
         user_ip = challenge_response.get("online_ip") or self.config.user_ip
         params = self.build_login_params(challenge=challenge, user_ip=user_ip, host=host)
 
-        return parse_jsonp(self._get(AUTH_API, params))
+        return parse_jsonp(self._get(AUTH_API, params, host=host))
 
     def _build_url(self, path: str) -> str:
         return urljoin(self.config.base_url.rstrip("/") + "/", path.lstrip("/"))
 
-    def _get(self, path: str, params: dict[str, Any]) -> str:
+    def _get(self, path: str, params: dict[str, Any], *, host: str | None = None) -> str:
         query = urlencode({key: value for key, value in params.items() if value is not None})
         url = self._build_url(path)
+        if host:
+            url = self._override_request_host(url, host)
         if query:
             url = f"{url}?{query}"
 
-        request = Request(url, headers={"User-Agent": self.user_agent}, method="GET")
+        headers = {"User-Agent": self.user_agent}
+        if host:
+            headers["Host"] = self._portal_host_header()
+        request = Request(url, headers=headers, method="GET")
         with self.opener.open(request, timeout=self.config.timeout) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             return response.read().decode(charset, errors="replace")
+
+    @staticmethod
+    def _override_request_host(url: str, host: str) -> str:
+        parts = urlsplit(url)
+        return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+    def _portal_host_header(self) -> str:
+        return urlsplit(self._build_url("/")).netloc
 
     @staticmethod
     def _parse_api_response(payload: str) -> dict[str, Any]:
