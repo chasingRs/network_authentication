@@ -54,11 +54,13 @@ class NetworkAuthenticator:
     def __init__(self, config: LoginConfig, opener: OpenerDirector | None = None) -> None:
         if not config.base_url:
             raise AuthenticationError("Missing portal base URL. Pass --base-url or set NETWORK_AUTH_BASE_URL.")
+        parsed_base_url = urlsplit(config.base_url)
+        if not parsed_base_url.scheme or not parsed_base_url.netloc:
+            raise AuthenticationError("Invalid portal base URL. Include scheme and host, for example: http://portal.example.com")
         self.config = config
         self.opener = opener or build_opener()
         self.user_agent = "network-authentication/1.0.0"
-        parsed_base_url = urlsplit(self.config.base_url)
-        self._portal_netloc = parsed_base_url.netloc or urlsplit(self._build_url("/")).netloc
+        self._portal_netloc = parsed_base_url.netloc
 
     def get_challenge(self, *, host: str | None = None) -> dict[str, Any]:
         text = self._get(
@@ -147,7 +149,10 @@ class NetworkAuthenticator:
     @staticmethod
     def _override_url_host(url: str, host: str) -> str:
         parts = urlsplit(url)
-        return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+        netloc = host
+        if parts.port and ":" not in host:
+            netloc = f"{host}:{parts.port}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
     @staticmethod
     def _parse_api_response(payload: str) -> dict[str, Any]:
