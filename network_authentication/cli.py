@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
 
     client = NetworkAuthenticator(config)
     try:
-        response = client.login(host=args.host)
+        response = client.login()
     except AuthenticationError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -61,7 +61,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default=os.getenv("NETWORK_AUTH_BASE_URL"))
     parser.add_argument("--ac-id", default=os.getenv("NETWORK_AUTH_AC_ID", "1"))
     parser.add_argument("--ip", default=os.getenv("NETWORK_AUTH_IP"))
-    parser.add_argument("--host", default=os.getenv("NETWORK_AUTH_HOST"))
     parser.add_argument("--device", default=os.getenv("NETWORK_AUTH_DEVICE", "Linux"))
     parser.add_argument("--platform", default=os.getenv("NETWORK_AUTH_PLATFORM", "Linux"))
     parser.add_argument("--timeout", type=float, default=float(os.getenv("NETWORK_AUTH_TIMEOUT", "10")))

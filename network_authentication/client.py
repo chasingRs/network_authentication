@@ -74,8 +74,8 @@ class NetworkAuthenticator:
         )
         return self._parse_api_response(text)
 
-    def build_login_params(self, *, challenge: str, user_ip: str | None = None, host: str | None = None) -> dict[str, Any]:
-        ip = "" if host else (user_ip or self.config.user_ip or "")
+    def build_login_params(self, *, challenge: str, user_ip: str | None = None) -> dict[str, Any]:
+        ip = user_ip or self.config.user_ip or ""
         username = self.config.full_username
         hmd5 = password_md5(self.config.password, challenge)
         info = encode_user_info(
@@ -107,7 +107,7 @@ class NetworkAuthenticator:
             "password": password,
             "os": self.config.device.device,
             "name": self.config.device.platform,
-            "double_stack": 1 if self.config.double_stack and not host else 0,
+            "double_stack": 1 if self.config.double_stack else 0,
             "chksum": checksum,
             "info": info,
             "ac_id": self.config.ac_id,
@@ -116,14 +116,14 @@ class NetworkAuthenticator:
             "type": self.config.type,
         }
 
-    def login(self, *, host: str | None = None) -> dict[str, Any]:
+    def login(self) -> dict[str, Any]:
         challenge_response = self.get_challenge()
         challenge = challenge_response.get("challenge")
         if not challenge:
             raise AuthenticationError(f"Cannot get challenge: {challenge_response}")
 
         user_ip = challenge_response.get("online_ip") or self.config.user_ip
-        params = self.build_login_params(challenge=challenge, user_ip=user_ip, host=host)
+        params = self.build_login_params(challenge=challenge, user_ip=user_ip)
 
         return parse_jsonp(self._get(AUTH_API, params))
 
