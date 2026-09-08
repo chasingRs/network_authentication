@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "network-authentication"
+version = "1.0.0"
+description = "Python client for SRun-based portal authentication"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Kuriko Moe" }]
+license = { text = "MIT" }
+
+[project.scripts]
+network-authentication = "network_authentication.cli:main"
+
+[tool.setuptools]
+packages = ["network_authentication"]
