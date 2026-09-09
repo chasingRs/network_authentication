@@ -25,12 +25,32 @@ python -m network_authentication login --host portal.example.edu -u 学号 -p '�
 python -m network_authentication logout --host portal.example.edu
 ~~~
 
+如果你拿到了浏览器或系统 captive portal 跳转出的完整入口 URL，优先传 --portal-url。脚本会从 URL 自动解析认证服务器、终端 IP、AC 名称等上下文，避免状态接口返回的 IP 与真实待认证终端不一致：
+
+~~~sh
+python -m network_authentication login \
+  --portal-url 'http://portal.example.edu/a79.htm?wlanuserip=client-ip&wlanacname=ac-name&url=http%3A%2F%2Fconnectivity.example%2Fgenerate_204' \
+  -u 学号 \
+  -p '密码'
+~~~
+
+注意：URL 里通常包含 &，在 shell 中必须用单引号或双引号包住整段 URL。
+
 使用环境变量，避免把密码写进命令历史：
 
 ~~~sh
 export DRCOM_USERNAME='学号'
 export DRCOM_PASSWORD='密码'
 export DRCOM_HOST='portal.example.edu'
+python -m network_authentication login
+~~~
+
+也可以直接保存原始入口 URL：
+
+~~~sh
+export DRCOM_PORTAL_URL='http://portal.example.edu/a79.htm?wlanuserip=client-ip&wlanacname=ac-name&url=http%3A%2F%2Fconnectivity.example%2Fgenerate_204'
+export DRCOM_USERNAME='学号'
+export DRCOM_PASSWORD='密码'
 python -m network_authentication login
 ~~~
 
@@ -66,7 +86,10 @@ DRCOM_HOST='portal.example.edu' DRCOM_USERNAME='学号' DRCOM_PASSWORD='密码' 
 ## 常用参数
 
 - --host：认证服务器地址；也可通过 DRCOM_HOST 配置
+- --portal-url：原始认证入口 URL；优先用于提取终端 IP、AC 名称等上下文
 - --ip：手动指定终端 IPv4
+- --ac-name：手动指定接入控制器名称
+- --ac-ip：手动指定接入控制器 IP
 - --mac：手动指定终端 MAC
 - --vlan：手动指定 VLAN ID
 - --json：输出完整响应，便于排障

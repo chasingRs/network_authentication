@@ -14,7 +14,9 @@ from .client import (
     LoginOptions,
     NetworkAuthenticator,
     PortalConfig,
+    client_info_from_portal_url,
     failure_message,
+    host_from_portal_url,
     is_online,
     normalize_mac,
     operation_succeeded,
@@ -24,10 +26,11 @@ from .client import (
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.host:
+    host = args.host or host_from_portal_url(args.portal_url)
+    if not host:
         parser.error("missing authentication host, pass --host or set DRCOM_HOST")
 
-    client = NetworkAuthenticator(PortalConfig(host=args.host, timeout=args.timeout))
+    client = NetworkAuthenticator(PortalConfig(host=host, timeout=args.timeout))
 
     try:
         client_info = build_client_info(args, client)
@@ -48,12 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Login to a Dr.COM/ePortal campus network.")
     parser.add_argument("command", choices=("login", "logout", "status"), help="要执行的操作")
     parser.add_argument("-H", "--host", default=env("DRCOM_HOST", "NETWORK_AUTH_HOST"), help="认证服务器地址")
+    parser.add_argument("--portal-url", default=env("DRCOM_PORTAL_URL", "NETWORK_AUTH_PORTAL_URL"), help="原始认证入口 URL，用于解析终端 IP、AC 名称等上下文")
     parser.add_argument("--timeout", type=float, default=float(env("DRCOM_TIMEOUT", "NETWORK_AUTH_TIMEOUT", default="8")), help="请求超时秒数")
     parser.add_argument("--json", action="store_true", default=env_flag("DRCOM_JSON", "NETWORK_AUTH_JSON"), help="输出完整 JSON 响应")
     parser.add_argument("--ip", default=env("DRCOM_IP", "NETWORK_AUTH_IP"), help="手动指定终端 IPv4")
     parser.add_argument("--ipv6", default=env("DRCOM_IPV6", "NETWORK_AUTH_IPV6"), help="手动指定终端 IPv6")
     parser.add_argument("--mac", default=env("DRCOM_MAC", "NETWORK_AUTH_MAC"), help="手动指定终端 MAC，可带冒号或横线")
     parser.add_argument("--vlan", default=env("DRCOM_VLAN", "NETWORK_AUTH_VLAN"), help="手动指定 VLAN ID")
+    parser.add_argument("--ac-ip", default=env("DRCOM_AC_IP", "NETWORK_AUTH_AC_IP"), help="手动指定接入控制器 IP")
+    parser.add_argument("--ac-name", default=env("DRCOM_AC_NAME", "NETWORK_AUTH_AC_NAME"), help="手动指定接入控制器名称")
     parser.add_argument("-u", "--username", default=env("DRCOM_USERNAME", "NETWORK_AUTH_USERNAME"), help="学号/账号")
     parser.add_argument("-p", "--password", default=env("DRCOM_PASSWORD", "NETWORK_AUTH_PASSWORD"), help="密码")
     parser.add_argument("--suffix", default=env("DRCOM_SUFFIX", "NETWORK_AUTH_SUFFIX", default=""), help="账号后缀，例如 @xyw / @dx / @lt")
@@ -79,17 +85,17 @@ def build_login_options(args: argparse.Namespace) -> LoginOptions:
 
 
 def build_client_info(args: argparse.Namespace, client: NetworkAuthenticator) -> ClientInfo | None:
-    if not any((args.ip, args.ipv6, args.mac, args.vlan)):
+    if not any((args.portal_url, args.ip, args.ipv6, args.mac, args.vlan, args.ac_ip, args.ac_name)):
         return None
 
-    current = client.client_info()
+    current = client_info_from_portal_url(args.portal_url) if args.portal_url else client.client_info()
     return ClientInfo(
         ip=args.ip or current.ip,
         ipv6=args.ipv6 if args.ipv6 is not None else current.ipv6,
         mac=normalize_mac(args.mac) if args.mac else current.mac,
         vlan=args.vlan or current.vlan,
-        ac_ip=current.ac_ip,
-        ac_name=current.ac_name,
+        ac_ip=args.ac_ip or current.ac_ip,
+        ac_name=args.ac_name or current.ac_name,
     )
 
 

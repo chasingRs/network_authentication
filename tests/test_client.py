@@ -8,7 +8,9 @@ from network_authentication.client import (
     PortalConfig,
     best_mac,
     build_account,
+    client_info_from_portal_url,
     decode_portal_text,
+    host_from_portal_url,
     normalize_host,
     parse_jsonp,
     portal_mac,
@@ -108,6 +110,21 @@ class DrcomClientTests(unittest.TestCase):
         self.assertTrue(response["already_online"])
         self.assertEqual(len(opener.requests), 1)
 
+    def test_login_does_not_skip_when_portal_url_ip_differs(self):
+        opener = _RecordingOpener(
+            [
+                'dr1001({"result":1,"uid":"student_id","v46ip":"status-client-ip"})',
+                'dr1002({"result":"1"})',
+            ]
+        )
+        client = NetworkAuthenticator(PortalConfig(host="portal.example.edu"), opener=opener)
+        client._callback_id = 1000
+
+        response = client.login(LoginOptions(username="student_id", password="secret"), ClientInfo(ip="portal-client-ip"))
+
+        self.assertEqual(response, {"result": "1"})
+        self.assertEqual(len(opener.requests), 2)
+
     def test_logout_uses_manual_client_info_when_present(self):
         opener = _RecordingOpener(
             [
@@ -134,6 +151,12 @@ class DrcomClientTests(unittest.TestCase):
 
     def test_normalize_host_strips_scheme_and_path(self):
         self.assertEqual(normalize_host("http://portal.example.edu/"), "portal.example.edu")
+
+    def test_portal_url_extracts_host_and_client_context(self):
+        portal_url = "http://portal.example.edu/a79.htm?wlanuserip=client-ip&wlanacname=ac-name&url=http%3A%2F%2Fconnectivity.example%2Fgenerate_204"
+
+        self.assertEqual(host_from_portal_url(portal_url), "portal.example.edu")
+        self.assertEqual(client_info_from_portal_url(portal_url), ClientInfo(ip="client-ip", ac_name="ac-name"))
 
     def test_parse_jsonp_rejects_wrong_callback(self):
         with self.assertRaises(AuthenticationError):

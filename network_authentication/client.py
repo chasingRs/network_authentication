@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import OpenerDirector, Request, build_opener
 
 
@@ -17,6 +17,12 @@ DEFAULT_JS_VERSION = "3.3.2"
 ZERO_MACS = {"", "000000000000", "111111111111"}
 UNKNOWN_CLIENT_IP = "unknown-client-ip"
 ZERO_CLIENT_MAC = "000000000000"
+
+IP_QUERY_KEYS = ("ip", "wlanuserip", "userip", "user-ip", "UserIP", "uip", "station_ip")
+MAC_QUERY_KEYS = ("mac", "usermac", "wlanusermac", "umac", "client_mac", "station_mac")
+VLAN_QUERY_KEYS = ("vlan", "vlanid")
+AC_IP_QUERY_KEYS = ("wlanacip", "acip", "switchip", "nasip", "nas-ip")
+AC_NAME_QUERY_KEYS = ("wlanacname", "sysname", "nasname", "nas-name")
 
 PORTAL_RET_CODES = {
     1: "账号或密码不正确",
@@ -92,7 +98,7 @@ class NetworkAuthenticator:
 
     def login(self, options: LoginOptions, client_info: ClientInfo | None = None) -> dict[str, Any]:
         current_status = self.status()
-        if is_online(current_status) and not options.force:
+        if is_online(current_status) and not options.force and same_client_ip(current_status, client_info):
             return {**current_status, "already_online": True}
 
         info = client_info or self.client_info(current_status)
@@ -196,6 +202,13 @@ def is_online(status_data: dict[str, Any]) -> bool:
     return str(status_data.get("result")) == "1" and bool(status_data.get("uid"))
 
 
+def same_client_ip(status_data: dict[str, Any], client_info: ClientInfo | None) -> bool:
+    if client_info is None:
+        return True
+    status_ip = first_text(status_data, "v46ip", "v4ip", "ss5")
+    return not status_ip or status_ip == client_info.ip
+
+
 def operation_succeeded(data: dict[str, Any]) -> bool:
     result = data.get("result")
     ret_code = data.get("ret_code")
@@ -249,11 +262,41 @@ def normalize_host(host: str) -> str:
     return normalized
 
 
+def host_from_portal_url(portal_url: str | None) -> str | None:
+    if not portal_url:
+        return None
+    return urlsplit(portal_url.strip()).hostname
+
+
+def client_info_from_portal_url(portal_url: str) -> ClientInfo:
+    params = parse_qs(urlsplit(portal_url.strip()).query, keep_blank_values=True)
+    return ClientInfo(
+        ip=query_value(params, IP_QUERY_KEYS) or UNKNOWN_CLIENT_IP,
+        ipv6=query_value(params, ("wlanuseripv6", "useripv6", "ipv6")),
+        mac=normalize_optional_mac(query_value(params, MAC_QUERY_KEYS)),
+        vlan=query_value(params, VLAN_QUERY_KEYS) or "1",
+        ac_ip=query_value(params, AC_IP_QUERY_KEYS),
+        ac_name=query_value(params, AC_NAME_QUERY_KEYS),
+    )
+
+
 def normalize_mac(mac: str) -> str:
     compact = mac.replace(":", "").replace("-", "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{12}", compact):
         raise AuthenticationError("MAC 地址应为 12 位十六进制，可带冒号或横线")
     return compact
+
+
+def normalize_optional_mac(mac: str) -> str:
+    return normalize_mac(mac) if mac else ZERO_CLIENT_MAC
+
+
+def query_value(params: dict[str, list[str]], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        values = params.get(key)
+        if values and values[0].strip():
+            return values[0].strip()
+    return ""
 
 
 def first_text(data: dict[str, Any], *keys: str) -> str:
