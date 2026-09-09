@@ -10,6 +10,7 @@ from network_authentication.client import (
     build_account,
     client_info_from_portal_url,
     decode_portal_text,
+    detect_source_ip,
     host_from_portal_url,
     normalize_host,
     parse_jsonp,
@@ -49,6 +50,24 @@ class _RecordingOpener:
     def open(self, request, timeout: float):
         self.requests.append((request, timeout))
         return _FakeResponse(self._payloads.pop(0), self._charset)
+
+
+class _FakeUdpSocket:
+    def __init__(self, local_ip: str) -> None:
+        self.local_ip = local_ip
+        self.target = None
+
+    def connect(self, target) -> None:
+        self.target = target
+
+    def getsockname(self):
+        return (self.local_ip, 0)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
 
 
 class DrcomClientTests(unittest.TestCase):
@@ -99,6 +118,25 @@ class DrcomClientTests(unittest.TestCase):
         self.assertIn("wlan_user_ip=client-ip", login_url)
         self.assertIn("wlan_user_ipv6=", login_url)
         self.assertIn("wlan_user_mac=000000000000", login_url)
+
+    def test_client_info_prefers_detected_source_ip(self):
+        opener = _RecordingOpener(['dr1001({"result":0,"v46ip":"status-client-ip"})'])
+        client = NetworkAuthenticator(
+            PortalConfig(host="portal.example.edu"),
+            opener=opener,
+            source_ip_detector=lambda host: "detected-client-ip",
+        )
+
+        self.assertEqual(client.client_info().ip, "detected-client-ip")
+
+    def test_detect_source_ip_uses_route_to_portal_host(self):
+        expected = ".".join(("192", "0", "2", "45"))
+        fake_socket = _FakeUdpSocket(expected)
+
+        actual = detect_source_ip("portal.example.edu", socket_factory=lambda family, socket_type: fake_socket)
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(fake_socket.target, ("portal.example.edu", 80))
 
     def test_login_skips_when_already_online(self):
         opener = _RecordingOpener(['dr1001({"result":1,"uid":"student_id"})'])

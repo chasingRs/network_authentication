@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import random
 import re
+import socket
 from dataclasses import dataclass
-from typing import Any
+from ipaddress import ip_address
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import OpenerDirector, Request, build_opener
@@ -87,9 +89,15 @@ class LoginOptions:
 class NetworkAuthenticator:
     """HTTP client that mirrors the discovered Dr.COM browser flow."""
 
-    def __init__(self, config: PortalConfig, opener: OpenerDirector | None = None) -> None:
+    def __init__(
+        self,
+        config: PortalConfig,
+        opener: OpenerDirector | None = None,
+        source_ip_detector: Callable[[str], str] | None = None,
+    ) -> None:
         self.config = config
         self.opener = opener or build_opener()
+        self.source_ip_detector = source_ip_detector or detect_source_ip
         self._callback_id = random.randint(1000, 9999)
 
     def status(self) -> dict[str, Any]:
@@ -98,10 +106,12 @@ class NetworkAuthenticator:
 
     def login(self, options: LoginOptions, client_info: ClientInfo | None = None) -> dict[str, Any]:
         current_status = self.status()
-        if is_online(current_status) and not options.force and same_client_ip(current_status, client_info):
+        info = client_info or self.client_info(current_status, require_ip=False)
+        if is_online(current_status) and not options.force and same_client_ip(current_status, info):
             return {**current_status, "already_online": True}
+        if info.ip == UNKNOWN_CLIENT_IP:
+            info = self.client_info(current_status)
 
-        info = client_info or self.client_info(current_status)
         params = {
             "login_method": "1",
             "user_account": build_account(options),
@@ -134,10 +144,14 @@ class NetworkAuthenticator:
         }
         return self._jsonp(f"{self.config.eportal_url}?c=Portal&a=logout", params)
 
-    def client_info(self, status_data: dict[str, Any] | None = None) -> ClientInfo:
+    def client_info(self, status_data: dict[str, Any] | None = None, *, require_ip: bool = True) -> ClientInfo:
         data = status_data or self.status()
+        status_ip = first_text(data, "v46ip", "v4ip", "ss5")
+        client_ip = self.source_ip_detector(self.config.host) or status_ip
+        if not client_ip and require_ip:
+            raise AuthenticationError("无法自动识别终端 IPv4；请使用 --ip 或 DRCOM_IP 指定")
         return ClientInfo(
-            ip=first_text(data, "v46ip", "v4ip", "ss5") or UNKNOWN_CLIENT_IP,
+            ip=client_ip or UNKNOWN_CLIENT_IP,
             ipv6=first_text(data, "myv6ip"),
             mac=portal_mac(data),
             vlan=first_text(data, "vlanid", "vid") or "1",
@@ -260,6 +274,25 @@ def normalize_host(host: str) -> str:
     if not normalized:
         raise AuthenticationError("认证服务器地址不能为空")
     return normalized
+
+
+def detect_source_ip(host: str, socket_factory: Callable[[int, int], Any] = socket.socket) -> str:
+    """Return the IPv4 address selected for traffic to the portal host."""
+    try:
+        with socket_factory(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect((normalize_host(host), 80))
+            candidate = str(sock.getsockname()[0])
+    except OSError:
+        return ""
+
+    return candidate if is_ipv4(candidate) else ""
+
+
+def is_ipv4(value: str) -> bool:
+    try:
+        return ip_address(value).version == 4
+    except ValueError:
+        return False
 
 
 def host_from_portal_url(portal_url: str | None) -> str | None:
