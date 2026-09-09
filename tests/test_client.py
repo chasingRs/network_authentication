@@ -1,4 +1,6 @@
 import unittest
+from email.message import Message
+from urllib.error import HTTPError
 
 from network_authentication.client import (
     AuthenticationError,
@@ -11,9 +13,11 @@ from network_authentication.client import (
     client_info_from_portal_url,
     decode_portal_text,
     detect_source_ip,
+    discover_portal_context,
     host_from_portal_url,
     normalize_host,
     parse_jsonp,
+    portal_context_from_url,
     portal_mac,
 )
 
@@ -31,8 +35,8 @@ class _FakeResponse:
         self._payload = payload.encode("utf-8") if isinstance(payload, str) else payload
         self.headers = _FakeHeaders(charset)
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, size: int = -1) -> bytes:
+        return self._payload if size is None or size < 0 else self._payload[:size]
 
     def __enter__(self):
         return self
@@ -50,6 +54,18 @@ class _RecordingOpener:
     def open(self, request, timeout: float):
         self.requests.append((request, timeout))
         return _FakeResponse(self._payloads.pop(0), self._charset)
+
+
+class _RedirectOpener:
+    def __init__(self, location: str) -> None:
+        self.location = location
+        self.requests = []
+
+    def open(self, request, timeout: float):
+        self.requests.append((request, timeout))
+        headers = Message()
+        headers["Location"] = self.location
+        raise HTTPError(request.full_url, 302, "Found", headers, None)
 
 
 class _FakeUdpSocket:
@@ -126,6 +142,7 @@ class DrcomClientTests(unittest.TestCase):
             opener=opener,
             source_ip_detector=lambda host: "detected-client-ip",
         )
+        client._callback_id = 1000
 
         self.assertEqual(client.client_info().ip, "detected-client-ip")
 
@@ -195,6 +212,24 @@ class DrcomClientTests(unittest.TestCase):
 
         self.assertEqual(host_from_portal_url(portal_url), "portal.example.edu")
         self.assertEqual(client_info_from_portal_url(portal_url), ClientInfo(ip="client-ip", ac_name="ac-name"))
+
+    def test_portal_url_accepts_acname_alias(self):
+        portal_url = "http://portal.example.edu/a79.htm?wlanuserip=client-ip&acname=access-controller"
+
+        self.assertEqual(client_info_from_portal_url(portal_url), ClientInfo(ip="client-ip", ac_name="access-controller"))
+
+    def test_portal_context_requires_redirect_parameters(self):
+        self.assertIsNone(portal_context_from_url("http://connectivity.example/generate_204"))
+
+    def test_discover_portal_context_reads_redirect_location(self):
+        portal_url = "http://portal.example.edu/a79.htm?wlanuserip=client-ip&wlanacname=access-controller"
+        opener = _RedirectOpener(portal_url)
+
+        context = discover_portal_context("http://connectivity.example/generate_204", opener=opener)
+
+        self.assertIsNotNone(context)
+        self.assertEqual(context.host, "portal.example.edu")
+        self.assertEqual(context.client_info, ClientInfo(ip="client-ip", ac_name="access-controller"))
 
     def test_parse_jsonp_rejects_wrong_callback(self):
         with self.assertRaises(AuthenticationError):

@@ -11,10 +11,14 @@ import sys
 from .client import (
     AuthenticationError,
     ClientInfo,
+    DEFAULT_PORTAL_PROBE_URL,
     LoginOptions,
     NetworkAuthenticator,
+    PortalContext,
     PortalConfig,
+    UNKNOWN_CLIENT_IP,
     client_info_from_portal_url,
+    discover_portal_context,
     failure_message,
     host_from_portal_url,
     is_online,
@@ -26,14 +30,15 @@ from .client import (
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    host = args.host or host_from_portal_url(args.portal_url)
+    portal_context = build_portal_context(args)
+    host = args.host or (portal_context.host if portal_context else None) or host_from_portal_url(args.portal_url)
     if not host:
-        parser.error("missing authentication host, pass --host or set DRCOM_HOST")
+        parser.error("missing authentication host; pass --host, set DRCOM_HOST, or keep portal probing enabled")
 
     client = NetworkAuthenticator(PortalConfig(host=host, timeout=args.timeout))
 
     try:
-        client_info = build_client_info(args, client)
+        client_info = build_client_info(args, client, portal_context)
         if args.command == "status":
             response = client.status()
         elif args.command == "logout":
@@ -52,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", choices=("login", "logout", "status"), help="要执行的操作")
     parser.add_argument("-H", "--host", default=env("DRCOM_HOST", "NETWORK_AUTH_HOST"), help="认证服务器地址")
     parser.add_argument("--portal-url", default=env("DRCOM_PORTAL_URL", "NETWORK_AUTH_PORTAL_URL"), help="可选原始入口 URL，用作自动探测失败时的兼容兜底")
+    parser.add_argument("--probe-url", default=env("DRCOM_PROBE_URL", "NETWORK_AUTH_PROBE_URL", default=DEFAULT_PORTAL_PROBE_URL), help="用于触发 captive portal 跳转的 HTTP 探测 URL")
+    parser.add_argument("--no-probe", action="store_true", default=env_flag("DRCOM_NO_PROBE", "NETWORK_AUTH_NO_PROBE"), help="禁用 captive portal 自动探测")
     parser.add_argument("--timeout", type=float, default=float(env("DRCOM_TIMEOUT", "NETWORK_AUTH_TIMEOUT", default="8")), help="请求超时秒数")
     parser.add_argument("--json", action="store_true", default=env_flag("DRCOM_JSON", "NETWORK_AUTH_JSON"), help="输出完整 JSON 响应")
     parser.add_argument("--ip", default=env("DRCOM_IP", "NETWORK_AUTH_IP"), help="手动覆盖自动探测到的终端 IPv4")
@@ -84,11 +91,36 @@ def build_login_options(args: argparse.Namespace) -> LoginOptions:
     )
 
 
-def build_client_info(args: argparse.Namespace, client: NetworkAuthenticator) -> ClientInfo | None:
-    if not any((args.portal_url, args.ip, args.ipv6, args.mac, args.vlan, args.ac_ip, args.ac_name)):
+def build_portal_context(args: argparse.Namespace) -> PortalContext | None:
+    if args.portal_url:
+        return None
+    if args.no_probe or not should_probe(args):
+        return None
+    return discover_portal_context(args.probe_url, timeout=args.timeout)
+
+
+def should_probe(args: argparse.Namespace) -> bool:
+    return not args.host or (args.command in {"login", "logout"} and not args.ac_name)
+
+
+def build_client_info(
+    args: argparse.Namespace,
+    client: NetworkAuthenticator,
+    portal_context: PortalContext | None = None,
+) -> ClientInfo | None:
+    if not any((portal_context, args.portal_url, args.ip, args.ipv6, args.mac, args.vlan, args.ac_ip, args.ac_name)):
         return None
 
-    current = client_info_from_portal_url(args.portal_url) if args.portal_url else client.client_info()
+    if args.portal_url:
+        current = client_info_from_portal_url(args.portal_url)
+    elif portal_context:
+        current = portal_context.client_info
+    else:
+        current = client.client_info()
+
+    if (not args.ip and current.ip == UNKNOWN_CLIENT_IP) or (not args.ac_name and not current.ac_name):
+        current = complete_client_info(current, client.client_info())
+
     return ClientInfo(
         ip=args.ip or current.ip,
         ipv6=args.ipv6 if args.ipv6 is not None else current.ipv6,
@@ -96,6 +128,17 @@ def build_client_info(args: argparse.Namespace, client: NetworkAuthenticator) ->
         vlan=args.vlan or current.vlan,
         ac_ip=args.ac_ip or current.ac_ip,
         ac_name=args.ac_name or current.ac_name,
+    )
+
+
+def complete_client_info(current: ClientInfo, fallback: ClientInfo) -> ClientInfo:
+    return ClientInfo(
+        ip=fallback.ip if current.ip == UNKNOWN_CLIENT_IP else current.ip,
+        ipv6=current.ipv6 or fallback.ipv6,
+        mac=current.mac or fallback.mac,
+        vlan=current.vlan or fallback.vlan,
+        ac_ip=current.ac_ip or fallback.ac_ip,
+        ac_name=current.ac_name or fallback.ac_name,
     )
 
 

@@ -7,15 +7,17 @@ import random
 import re
 import socket
 from dataclasses import dataclass
+from html import unescape
 from ipaddress import ip_address
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, urlsplit
-from urllib.request import OpenerDirector, Request, build_opener
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, OpenerDirector, Request, build_opener
 
 
 DEFAULT_TIMEOUT = 8.0
 DEFAULT_JS_VERSION = "3.3.2"
+DEFAULT_PORTAL_PROBE_URL = "http://connectivitycheck.gstatic.com/generate_204"
 ZERO_MACS = {"", "000000000000", "111111111111"}
 UNKNOWN_CLIENT_IP = "unknown-client-ip"
 ZERO_CLIENT_MAC = "000000000000"
@@ -24,7 +26,7 @@ IP_QUERY_KEYS = ("ip", "wlanuserip", "userip", "user-ip", "UserIP", "uip", "stat
 MAC_QUERY_KEYS = ("mac", "usermac", "wlanusermac", "umac", "client_mac", "station_mac")
 VLAN_QUERY_KEYS = ("vlan", "vlanid")
 AC_IP_QUERY_KEYS = ("wlanacip", "acip", "switchip", "nasip", "nas-ip")
-AC_NAME_QUERY_KEYS = ("wlanacname", "sysname", "nasname", "nas-name")
+AC_NAME_QUERY_KEYS = ("wlanacname", "acname", "sysname", "nasname", "nas-name")
 
 PORTAL_RET_CODES = {
     1: "账号或密码不正确",
@@ -73,6 +75,13 @@ class ClientInfo:
     vlan: str = "1"
     ac_ip: str = ""
     ac_name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PortalContext:
+    url: str
+    host: str
+    client_info: ClientInfo
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +302,81 @@ def is_ipv4(value: str) -> bool:
         return ip_address(value).version == 4
     except ValueError:
         return False
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Expose captive portal redirects instead of following them."""
+
+    def http_error_301(self, req, fp, code, msg, headers):
+        raise HTTPError(req.full_url, code, msg, headers, fp)
+
+    http_error_302 = http_error_301
+    http_error_303 = http_error_301
+    http_error_307 = http_error_301
+    http_error_308 = http_error_301
+
+
+def discover_portal_context(
+    probe_url: str = DEFAULT_PORTAL_PROBE_URL,
+    *,
+    timeout: float = DEFAULT_TIMEOUT,
+    opener: OpenerDirector | None = None,
+) -> PortalContext | None:
+    """Discover Dr.COM client context from a captive portal redirect."""
+    candidates: list[str] = []
+
+    try:
+        request = Request(
+            probe_url,
+            headers={
+                "Accept": "*/*",
+                "Cache-Control": "no-cache",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) network-authentication/2.0",
+            },
+            method="GET",
+        )
+        portal_opener = opener or build_opener(_NoRedirectHandler())
+        with portal_opener.open(request, timeout=timeout) as response:
+            candidates.append(response.geturl())
+            candidates.extend(urls_from_text(decode_portal_text(response.read(8192), response.headers.get_content_charset())))
+    except HTTPError as exc:
+        try:
+            if 300 <= exc.code < 400:
+                location = exc.headers.get("Location")
+                if location:
+                    candidates.append(urljoin(probe_url, location))
+                if exc.fp:
+                    candidates.extend(urls_from_text(decode_portal_text(exc.fp.read(8192), exc.headers.get_content_charset())))
+            else:
+                return None
+        finally:
+            exc.close()
+    except (OSError, ValueError, URLError):
+        return None
+
+    for candidate in candidates:
+        context = portal_context_from_url(candidate)
+        if context:
+            return context
+    return None
+
+
+def portal_context_from_url(url: str) -> PortalContext | None:
+    host = host_from_portal_url(url)
+    if not host:
+        return None
+
+    try:
+        client_info = client_info_from_portal_url(url)
+    except AuthenticationError:
+        return None
+    has_context = client_info.ip != UNKNOWN_CLIENT_IP or bool(client_info.ac_ip or client_info.ac_name)
+    return PortalContext(url=url, host=host, client_info=client_info) if has_context else None
+
+
+def urls_from_text(payload: str) -> list[str]:
+    text = unescape(payload).replace("\\/", "/")
+    return [match.rstrip(".;,)]") for match in re.findall(r"""https?://[^\s'"<>]+""", text)]
 
 
 def host_from_portal_url(portal_url: str | None) -> str | None:
