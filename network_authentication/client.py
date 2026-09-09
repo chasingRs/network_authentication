@@ -15,6 +15,8 @@ from urllib.request import OpenerDirector, Request, build_opener
 DEFAULT_TIMEOUT = 8.0
 DEFAULT_JS_VERSION = "3.3.2"
 ZERO_MACS = {"", "000000000000", "111111111111"}
+UNKNOWN_CLIENT_IP = "unknown-client-ip"
+ZERO_CLIENT_MAC = "000000000000"
 
 PORTAL_RET_CODES = {
     1: "账号或密码不正确",
@@ -129,9 +131,9 @@ class NetworkAuthenticator:
     def client_info(self, status_data: dict[str, Any] | None = None) -> ClientInfo:
         data = status_data or self.status()
         return ClientInfo(
-            ip=first_text(data, "v46ip", "v4ip", "ss5") or "unknown-client-ip",
-            ipv6=first_text(data, "myv6ip", "v6ip"),
-            mac=best_mac(data),
+            ip=first_text(data, "v46ip", "v4ip", "ss5") or UNKNOWN_CLIENT_IP,
+            ipv6=first_text(data, "myv6ip"),
+            mac=portal_mac(data),
             vlan=first_text(data, "vlanid", "vid") or "1",
             ac_ip=first_text(data, "wlan_ac_ip", "wlanacip"),
             ac_name=first_text(data, "wlan_ac_name", "wlanacname"),
@@ -267,4 +269,9 @@ def best_mac(data: dict[str, Any]) -> str:
         value = str(data.get(key) or "").replace(":", "").replace("-", "").lower()
         if value not in ZERO_MACS:
             return value
-    return "000000000000"
+    return ZERO_CLIENT_MAC
+
+
+def portal_mac(data: dict[str, Any]) -> str:
+    value = first_text(data, "ss4", "olmac").replace(":", "").replace("-", "").lower()
+    return value or ZERO_CLIENT_MAC

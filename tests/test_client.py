@@ -11,6 +11,7 @@ from network_authentication.client import (
     decode_portal_text,
     normalize_host,
     parse_jsonp,
+    portal_mac,
 )
 
 
@@ -80,7 +81,7 @@ class DrcomClientTests(unittest.TestCase):
     def test_login_posts_eportal_parameters_after_offline_status(self):
         opener = _RecordingOpener(
             [
-                'dr1001({"result":0,"v46ip":"client-ip","olmac":"aabbccddeeff"})',
+                'dr1001({"result":0,"v46ip":"client-ip","ss4":"000000000000","olmac":"aabbccddeeff","v6ip":"client-ipv6"})',
                 'dr1002({"result":"1"})',
             ]
         )
@@ -94,7 +95,8 @@ class DrcomClientTests(unittest.TestCase):
         self.assertTrue(login_url.startswith("http://portal.example.edu:801/eportal/?c=Portal&a=login&"))
         self.assertIn("user_account=%2C0%2CSTUDENT_ID", login_url)
         self.assertIn("wlan_user_ip=client-ip", login_url)
-        self.assertIn("wlan_user_mac=aabbccddeeff", login_url)
+        self.assertIn("wlan_user_ipv6=", login_url)
+        self.assertIn("wlan_user_mac=000000000000", login_url)
 
     def test_login_skips_when_already_online(self):
         opener = _RecordingOpener(['dr1001({"result":1,"uid":"student_id"})'])
@@ -126,6 +128,9 @@ class DrcomClientTests(unittest.TestCase):
 
     def test_best_mac_prefers_real_values(self):
         self.assertEqual(best_mac({"ss4": "000000000000", "olmac": "42:35:48:53:3b:fa"}), "423548533bfa")
+
+    def test_portal_mac_matches_browser_field_priority(self):
+        self.assertEqual(portal_mac({"ss4": "000000000000", "olmac": "42:35:48:53:3b:fa"}), "000000000000")
 
     def test_normalize_host_strips_scheme_and_path(self):
         self.assertEqual(normalize_host("http://portal.example.edu/"), "portal.example.edu")
